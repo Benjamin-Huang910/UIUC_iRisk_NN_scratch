@@ -1,0 +1,185 @@
+---
+title: "Visualization_2"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-02-23"
+---
+
+```{r dataset}
+
+setwd("C:\\宿題\\UIUC\\IRisk Lab\\Visualization")
+#install.packages(c("tidyverse", "keras", "MASS", "logistf", "Metrics", "prediction"))
+library(tidyverse)
+library(keras)
+library(MASS)
+library(logistf)
+library(Metrics)
+library(prediction)
+library(tensorflow)
+
+# Loads the MNIST dataset, saves as an .RData file if not in WD
+#if (!(file.exists("mnist_data.RData"))) {
+  
+  ## installs older python version
+  #reticulate::install_python("3.10:latest")
+  #keras::install_keras(python_version = "3.10")
+  ## re-loads keras
+  #library(keras)
+  ## get MNIST data
+  #mnist <- dataset_mnist()
+  ## save to WD as .RData
+  #save(mnist, file = "mnist_data.RData")
+  
+#} else {
+  ## read-in MNIST data
+  #load(file = "mnist_data.RData")
+#}
+
+mnist <- dataset_mnist()
+
+# Access the training and testing sets
+train_images <- mnist$train$x
+train_labels <- mnist$train$y
+test_images <- mnist$test$x
+test_labels <- mnist$test$y
+
+```
+
+```{r plot}
+
+## plot function, from OG data
+plot_mnist <- function(plt) {
+  ## create image
+  image(x = 1:28,
+        y = 1:28,
+        ## image is oriented incorrectly, this fixes it
+        z = t(apply(plt, 2, rev)),
+        ## 255:0 puts black on white canvas,
+        ## changing to 0:255 puts white on black canvas
+        col = gray((255:0)/255),
+        axes = FALSE)
+  
+  ## create plot border
+  rect(xleft = 0.5,
+       ybottom = 0.5,
+       xright = 28 + 0.5,
+       ytop = 28 + 0.5,
+       border = "black",
+       lwd = 1)
+}
+
+## 1st 36 digits example
+par(mfcol = c(6, 6))
+par(mar = c(0, 0, 0, 0))
+
+apply(X = test_images[1:36, , ],
+      MARGIN = 1,
+      FUN = plot_mnist)
+
+par(mfcol = c(1, 1))
+```
+
+```{r sigmoid function}
+# Preprocess the data
+train_images <- array_reshape(train_images, c(dim(train_images)[1], 28 * 28)) / 255
+test_images <- array_reshape(test_images, c(dim(test_images)[1], 28 * 28)) / 255
+
+# Define the neural network
+model2 <- keras_model_sequential() %>%
+  layer_dense(units = 128, activation = "sigmoid", input_shape = c(784)) %>%
+  layer_dense(units = 64, activation = "sigmoid") %>%
+  layer_dense(units = 10, activation = "sigmoid")
+
+# Compile the model
+model2 %>% compile(
+  optimizer = 'adam',
+  loss = 'binary_crossentropy',  # Using binary crossentropy for binary classification
+  metrics = c('accuracy')
+)
+
+# Display the model summary
+summary(model2)
+```
+
+```{r sigmoid plot}
+# Assuming 'sample_image' is the input image
+sample_image <- test_images[1, , drop = FALSE]
+
+# Reshape the sample image back to its original 28x28 shape
+sample_image_reshaped <- array_reshape(sample_image, c(28, 28))
+
+# Get the output of the first hidden layer
+layer1_output <- predict(model2, sample_image)
+layer1_output <- as.vector(layer1_output)
+
+# Plot the result of the sigmoid activation for all 128 units in a line chart
+ggplot() +
+  geom_line(aes(x = seq_along(layer1_output)-1, y = layer1_output),
+            color = "blue") +
+  labs(title = "Output of Sigmoid Activation in the Output Layer",
+       x = "Class Index",
+       y = "Output") +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0, 1)) +  # Set y-axis limit
+  scale_x_continuous(breaks = seq(0, 9, by = 1), limits = c(0, 9))  # Set x-axis breaks
+```
+$$
+Sigmoid \:\: Function:
+\\
+f(x) = \frac{1}{1+e^{-x}}
+$$
+
+```{r nn}
+# Preprocess the data
+train_images <- array_reshape(train_images, c(dim(train_images)[1], 28 * 28)) / 255
+test_images <- array_reshape(test_images, c(dim(test_images)[1], 28 * 28)) / 255
+
+# Define the neural network
+model1 <- keras_model_sequential() %>%
+  layer_dense(units = 128, activation = "sigmoid", input_shape = c(28 * 28)) %>%
+  layer_dense(units = 10, activation = "softmax")
+
+# Compile the model
+model1 %>% compile(
+  optimizer = 'Adam',
+  loss = 'sparse_categorical_crossentropy',
+  metrics = c('accuracy')
+)
+
+# Train the model
+model1 %>% fit(train_images, train_labels, epochs = 10, batch_size = 64, validation_split = 0.2)
+
+# Evaluate the model on test data
+test_loss_and_accuracy <- model1 %>% evaluate(test_images, test_labels)
+cat("Test loss and accuracy:", test_loss_and_accuracy, "\n")
+```
+
+```{r softmax plot}
+# Sample input image for visualization
+sample_image <- test_images[1, , drop = FALSE]
+# Reshape the sample image back to its original 28x28 shape
+sample_image_reshaped <- array_reshape(sample_image, c(28, 28))
+
+# Predictions from the output layer (softmax activation)
+output_layer_output <- predict(model1, sample_image)
+output_layer_output <- as.vector(output_layer_output)
+
+# Plot the result of the sigmoid activation in a line chart
+ggplot() +
+  geom_line(aes(x = seq_along(output_layer_output)-1, y = output_layer_output),
+            color = "blue") +
+  labs(title = "Output of Softmax Activation in the Output Layer",
+       x = "Class Index",
+       y = "Output") +
+  theme_minimal() +
+  coord_cartesian(ylim = c(0, 1)) +  # Set y-axis limit
+  scale_x_continuous(breaks = seq(0, 9, by = 1), limits = c(0, 9))  # Set x-axis breaks
+```
+$$
+Softmax \:\: Function:
+\\
+f(x_i) = \frac{e^{-x_i}}{\sum\limits_{i=1}^Ne^{-x_i}}
+$$
+
+

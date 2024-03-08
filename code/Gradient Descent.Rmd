@@ -1,0 +1,360 @@
+---
+title: "Gradient Descent"
+output: html_document
+date: "2024-02-29"
+---
+
+```{r dataset}
+
+setwd("C:\\宿題\\UIUC\\IRisk Lab\\Gradient Descent")
+#install.packages(c("tidyverse", "keras", "MASS", "logistf", "Metrics", "prediction"))
+library(tidyverse)
+library(keras)
+library(MASS)
+library(logistf)
+library(Metrics)
+library(prediction)
+library(tensorflow)
+
+# Loads the MNIST dataset, saves as an .RData file if not in WD
+#if (!(file.exists("mnist_data.RData"))) {
+  
+  ## installs older python version
+  #reticulate::install_python("3.10:latest")
+  #keras::install_keras(python_version = "3.10")
+  ## re-loads keras
+  #library(keras)
+  ## get MNIST data
+  #mnist <- dataset_mnist()
+  ## save to WD as .RData
+  #save(mnist, file = "mnist_data.RData")
+  
+#} else {
+  ## read-in MNIST data
+  #load(file = "mnist_data.RData")
+#}
+
+mnist <- dataset_mnist()
+
+# Access the training and testing sets
+train_images <- mnist$train$x
+train_labels <- mnist$train$y
+test_images <- mnist$test$x
+test_labels <- mnist$test$y
+
+```
+
+```{r Gradient Descent}
+# Function to perform gradient descent
+gradient_descent <- function(model, x, y, learning_rate, epochs, batch_size) {
+  history <- data.frame(epoch = integer(), loss = numeric())
+
+  for (epoch in 1:epochs) {
+    # Shuffle the data for each epoch
+    indices <- sample(1:nrow(x))
+    x <- x[indices, ]
+    y <- y[indices]
+
+    for (i in seq(1, nrow(x), batch_size)) {
+      end_index <- min(i + batch_size - 1, nrow(x))  # Ensure the end index is within bounds
+      x_batch <- x[i:end_index, ]
+      y_batch <- y[i:end_index]
+
+      # Compute gradient and update weights
+      gradients <- compute_gradients(model, x_batch, y_batch)
+      model <- update_weights(model, gradients, learning_rate)
+
+      # Record loss for plotting
+      loss <- model %>% evaluate(x_batch, y_batch, verbose = 0)
+      history <- rbind(history, data.frame(epoch = epoch, loss = loss))
+    }
+  }
+
+  return(list(model = model, history = history))
+}
+
+
+# Function to compute gradients using tf$GradientTape
+compute_gradients <- function(model, x, y) {
+  with(tf$GradientTape(persistent = TRUE) %as% tape, {
+    # Forward pass
+    predictions <- model(x)
+    loss <- keras$losses$sparse_categorical_crossentropy(y, predictions)
+    loss_value <- tf$reduce_mean(loss)
+    
+    # Compute gradients
+    grads <- tape$gradient(loss_value, model$trainable_variables)
+    return(list(loss = loss_value, grads = grads))
+  })
+}
+
+# Function to update weights using gradients
+update_weights <- function(model, gradients, learning_rate) {
+  weights <- get_weights(model)
+  for (i in seq_along(weights)) {
+    weights[[i]] <- weights[[i]] - learning_rate * gradients$grads[[i]]
+  }
+  set_weights(model, weights)
+  return(model)
+}
+```
+
+```{r nn}
+# Convert labels to one-hot encoding
+train_labels_onehot <- to_categorical(train_labels, 10)
+# Flatten train_images and test_images to (60000, 28 * 28)
+train_images <- array_reshape(train_images, c(dim(train_images)[1], 28 * 28)) / 255
+test_images <- array_reshape(test_images, c(dim(test_images)[1], 28 * 28)) / 255
+
+# Define the neural network
+model1 <- keras_model_sequential() %>%
+  layer_dense(units = 128, activation = "sigmoid", input_shape = c(28 * 28)) %>%
+  layer_dense(units = 10, activation = "softmax")
+
+# Set hyperparameters
+learning_rate <- 0.01
+epochs <- 10
+batch_size <- 64
+
+# Compile the model
+model1 %>% compile(
+  optimizer = 'Adam',
+  loss = 'sparse_categorical_crossentropy',
+  metrics = c('accuracy')
+)
+
+# Perform gradient descent
+result <- gradient_descent(model1, train_images, train_labels_onehot, learning_rate, epochs, batch_size)
+
+# Plot the loss during training
+ggplot(result$history, aes(x = epoch, y = loss)) +
+  geom_line(color = "blue") +
+  labs(title = "Gradient Descent Progress", x = "Epoch", y = "Loss") +
+  theme_minimal()
+
+# Train the model
+model1 %>% fit(train_images, train_labels, epochs = 10, batch_size = 64, validation_split = 0.2)
+
+# Evaluate the model on test data
+test_loss_and_accuracy <- model1 %>% evaluate(test_images, test_labels)
+cat("Test loss and accuracy:", test_loss_and_accuracy, "\n")
+```
+```{r trace}
+library(plotly)
+
+# Function to generate background data
+generate_bg_data <- function(bg_x, bg_y) {
+  z_container <- matrix(0, nrow = length(bg_x), ncol = length(bg_y))
+
+  for (i in seq_along(bg_x)) {
+    for (j in seq_along(bg_y)) {
+      z_container[i, j] <- z(bg_x[i], bg_y[j])
+    }
+  }
+
+  return(z_container)
+}
+
+# Function to generate max and min data
+generate_max_min_data <- function(r) {
+  max_num <- floor(r / 2)
+  min_num <- floor(-1 * (r / 2))
+  return(c(max_num, min_num, max_num, min_num))
+}
+
+# Define the z function
+z <- function(x, y) {
+  return((x^2 + y^2) / 2)
+}
+
+# Generate background data
+plot_range <- 50
+max_min_data <- generate_max_min_data(plot_range)
+bg_x <- seq(max_min_data[2], max_min_data[1], length.out = (max_min_data[1] - max_min_data[2] + 1) * 10)
+bg_y <- seq(max_min_data[4], max_min_data[3], length.out = (max_min_data[3] - max_min_data[4] + 1) * 10)
+z_data <- generate_bg_data(bg_x, bg_y)
+
+# Set hyperparameters
+lr <- 0.08
+epochs <- 40
+
+# Initialize variables
+train_x <- 1
+train_y <- 2
+w_x <- 0.9
+w_y <- 0.9
+label_x <- 25
+label_y <- 23
+
+# Create 3D plot using plotly
+plot <- plot_ly(
+  x = rep(bg_x, each = length(bg_y)), 
+  y = rep(bg_y, times = length(bg_x)),
+  z = as.vector(z_data), 
+  type = "surface", 
+  colors = colorRamp(c("blue", "red")), opacity = 0.6
+) %>%
+  layout(scene = list(aspectmode = "cube"))
+
+# Training loop
+for (e in 1:epochs) {
+  # Predict
+  prediction_x <- train_x * w_x
+  prediction_y <- train_y * w_y
+
+  # Calculate error
+  error_x <- label_x - prediction_x
+  error_y <- label_y - prediction_y
+
+  # Display current error
+  cat("epoch:", e, ",  error_x:", error_x, ", error_y:", error_y, "\n")
+
+  # Calculate derivatives
+  current_z <- z(error_x, error_y)
+
+  # Add points to the 3D plot
+  plot <- plot %>% add_trace(x = error_x, y = error_y, z = current_z, type = "scatter3d", mode = "markers", marker = list(size = 5))
+
+  # Update weights
+  if (current_m_x != 0 || current_m_y != 0) {
+    w_x <- w_x + (error_x * lr) * train_x
+    w_y <- w_y + (error_y * lr) * train_y
+  } else {
+    cat("Error is minimum.\n")
+  }
+}
+
+# Display the final 3D plot
+plot
+```
+
+```{r curved surface}
+# Define a custom curved surface function
+curved_surface <- function(x, y) {
+  return((x^2 + y^2) / 2)
+}
+
+# Generate data for the curved surface
+x <- seq(-10, 10, length.out = 100)
+y <- seq(-10, 10, length.out = 100)
+z <- outer(x, y, curved_surface)
+
+# Plot the curved surface
+p <- plot_ly(z = z, x = x, y = y, type = "surface")
+p
+```
+
+```{r 3D Plot}
+library(plotly)
+
+# Function to generate background data
+generate_bg_data <- function(bg_x, bg_y) {
+  z_container <- matrix(0, nrow = length(bg_x), ncol = length(bg_y))
+
+  for (i in seq_along(bg_x)) {
+    for (j in seq_along(bg_y)) {
+      z_container[i, j] <- z(bg_x[i], bg_y[j])
+    }
+  }
+
+  return(z_container)
+}
+
+# Function to generate max and min data
+generate_max_min_data <- function(r) {
+  max_num <- floor(r / 2)
+  min_num <- floor(-1 * (r / 2))
+  return(c(max_num, min_num, max_num, min_num))
+}
+
+# Define the z function
+z <- function(x, y) {
+  return((x^2 + y^2) / 2)
+}
+
+# Generate background data
+plot_range <- 50
+max_min_data <- generate_max_min_data(plot_range)
+bg_x <- seq(max_min_data[2], max_min_data[1], length.out = (max_min_data[1] - max_min_data[2] + 1) * 10)
+bg_y <- seq(max_min_data[4], max_min_data[3], length.out = (max_min_data[3] - max_min_data[4] + 1) * 10)
+z_data <- generate_bg_data(bg_x, bg_y)
+
+
+
+# Define a custom curved surface function
+curved_surface <- function(x, y, W = 1) {
+  return(W * (x^2 + y^2) / 2)
+}
+
+# Generate data for the curved surface
+x_1 <- seq(-20, 20, length.out = 500)
+y_1 <- seq(-20, 20, length.out = 500)
+z_1 <- outer(x_1, y_1, curved_surface)
+
+
+
+
+# Set hyperparameters
+lr <- 0.08
+epochs <- 40
+
+# Initialize variables
+train_x <- 1
+train_y <- 2
+w_x <- 0.9
+w_y <- 0.9
+label_x <- 25
+label_y <- 23
+
+# Create 3D plot using plotly
+plot <- plot_ly(
+  x = rep(bg_x, each = length(bg_y)), 
+  y = rep(bg_y, times = length(bg_x)),
+  z = as.vector(z_data), 
+  type = "surface", 
+  colors = colorRamp(c("blue", "red")), opacity = 0.6
+) %>%
+  layout(scene = list(aspectmode = "cube"))
+
+p <- plot_ly(z = z_1, x = x_1, y = y_1, type = "surface")
+
+# Training loop
+for (e in 1:epochs) {
+  # Predict
+  prediction_x <- train_x * w_x
+  prediction_y <- train_y * w_y
+
+  # Calculate error
+  error_x <- label_x - prediction_x
+  error_y <- label_y - prediction_y
+
+  # Display current error
+  cat("epoch:", e, ",  error_x:", error_x, ", error_y:", error_y, "\n")
+
+  # Calculate derivatives
+  current_z <- z(error_x, error_y)
+
+  # Add points to the 3D plot
+  plot <- plot %>% add_trace(x = error_x, y = error_y, z = current_z, type = "scatter3d", mode = "markers", marker = list(size = 5))
+
+  # Update weights
+  if (current_m_x != 0 || current_m_y != 0) {
+    w_x <- w_x + (error_x * lr) * train_x
+    w_y <- w_y + (error_y * lr) * train_y
+  } else {
+    cat("Error is minimum.\n")
+  }
+}
+
+# Combine the two plots into one
+combined_plot <- subplot(
+  plot,
+  p,
+  nrows = 1,
+  shareX = TRUE,
+  shareY = TRUE
+)
+
+# Show the combined plot
+combined_plot
+```

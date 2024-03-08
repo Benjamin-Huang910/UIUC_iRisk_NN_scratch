@@ -1,0 +1,210 @@
+---
+title: "Baseline Model"
+output:
+html_document: default
+pdf_document: default
+date: "2024-01-29"
+---
+
+```{r dataset}
+
+setwd("C:\\宿題\\UIUC\\IRisk Lab\\Baseline Model")
+#install.packages(c("tidyverse", "keras", "MASS", "logistf", "Metrics", "prediction"))
+library(tidyverse)
+library(keras)
+library(MASS)
+library(logistf)
+library(Metrics)
+library(prediction)
+
+# Loads the MNIST dataset, saves as an .RData file if not in WD
+#if (!(file.exists("mnist_data.RData"))) {
+  
+  ## installs older python version
+  #reticulate::install_python("3.10:latest")
+  #keras::install_keras(python_version = "3.10")
+  ## re-loads keras
+  #library(keras)
+  ## get MNIST data
+  #mnist <- dataset_mnist()
+  ## save to WD as .RData
+  #save(mnist, file = "mnist_data.RData")
+  
+#} else {
+  ## read-in MNIST data
+  #load(file = "mnist_data.RData")
+#}
+
+mnist <- dataset_mnist()
+
+# Access the training and testing sets
+x_train <- mnist$train$x
+y_train <- mnist$train$y
+x_test <- mnist$test$x
+y_test <- mnist$test$y
+```
+
+```{r plot}
+
+## plot function, from OG data
+plot_mnist <- function(plt) {
+  ## create image
+  image(x = 1:28,
+        y = 1:28,
+        ## image is oriented incorrectly, this fixes it
+        z = t(apply(plt, 2, rev)),
+        ## 255:0 puts black on white canvas,
+        ## changing to 0:255 puts white on black canvas
+        col = gray((255:0)/255),
+        axes = FALSE)
+  
+  ## create plot border
+  rect(xleft = 0.5,
+       ybottom = 0.5,
+       xright = 28 + 0.5,
+       ytop = 28 + 0.5,
+       border = "black",
+       lwd = 1)
+}
+
+## 1st 36 digits example
+par(mfcol = c(6, 6))
+par(mar = c(0, 0, 0, 0))
+
+apply(X = x_train[1:36, , ],
+      MARGIN = 1,
+      FUN = plot_mnist)
+
+par(mfcol = c(1, 1))
+```
+
+```{r train data}
+
+## train data
+
+# initialize matrix
+x_train_2 <- matrix(nrow = nrow(x_train),
+                    ncol = 28*28)
+
+## likely a faster way to do this in the future
+for (i in 1:nrow(x_train)) {
+  ## get each layer's matrix image, stretch to 28^2 x 1
+  x_train_2[i, ] <- matrix(x_train[i, , ], 1, 28*28)
+}
+
+x_train_2 <- x_train_2 %>%
+  as.data.frame()
+
+## test data
+x_test_2 <- matrix(nrow = nrow(x_test),
+                   ncol = 28*28)
+
+for (i in 1:nrow(x_test)) {
+  x_test_2[i, ] <- matrix(x_test[i, , ], 1, 28*28)
+}
+
+x_test_2 <- x_test_2 %>%
+  as.data.frame()
+```
+
+```{r for logistic}
+# Initialize a list to store the logistic regression models
+logistic_models <- list()
+
+# Initialize a list to store the predicted probabilities for each digit
+probs_train_list <- list()
+probs_test_list <- list()
+
+# Initialize a list to store the binary predictions for each digit
+pred_train_list <- list()
+pred_test_list <- list()
+
+# Initialize lists to store log loss and classification error for each digit
+log_loss_train_list <- list()
+classification_error_train_list <- list()
+log_loss_test_list <- list()
+classification_error_test_list <- list()
+
+# Iterate over digits from 0 to 9
+for (digit in 0:9) {
+  # Apply the transformation to y_train and y_test for the current digit
+  y_train_digit <- ifelse(y_train == digit, 1, 0)
+  y_test_digit <- ifelse(y_test == digit, 1, 0)
+
+  # Fit logistic regression model for the current digit
+  logistic_model <- glm(y_train_digit ~ ., family = binomial(link = "logit"), data = x_train_2)
+  logistic_models[[as.character(digit)]] <- logistic_model
+
+  # Make predictions on the training set for the current digit
+  probs_train <- predict(logistic_model, x_train_2, type = "response")
+  probs_train_list[[as.character(digit)]] <- probs_train
+
+  # Convert predicted probabilities to binary predictions (0 or 1)
+  pred_train <- ifelse(probs_train > 0.5, 1, 0)
+  pred_train_list[[as.character(digit)]] <- pred_train
+
+  # Make predictions on the test set for the current digit
+  probs_test <- predict(logistic_model, x_test_2, type = "response")
+  probs_test_list[[as.character(digit)]] <- probs_test
+
+  # Convert predicted probabilities to binary predictions (0 or 1)
+  pred_test <- ifelse(probs_test > 0.5, 1, 0)
+  pred_test_list[[as.character(digit)]] <- pred_test
+
+  # Calculate log loss on the training set for the current digit
+  loss_entropy_train <- logLoss(y_train_digit, probs_train)
+  cat("Training set log loss for digit", digit, ":", round(loss_entropy_train, 3), "\n")
+  
+  # Calculate log loss on the test set for the current digit
+  loss_entropy_test <- logLoss(y_test_digit, probs_test)
+  cat("Test set log loss for digit", digit, ":", round(loss_entropy_test, 3), "\n")
+
+  # Calculate classification error on the training set for the current digit
+  classification_error_train <- 1 - sum(pred_train == y_train_digit) / length(y_train_digit)
+  cat("Average number of classification errors on training set for digit", digit, ":", round(classification_error_train, 3), "\n")
+  
+  # Calculate classification error on the test set for the current digit
+  classification_error_test <- 1 - sum(pred_test == y_test_digit) / length(y_test_digit)
+  cat("Average number of classification errors on test set for digit", digit, ":", round(classification_error_test, 3), "\n")
+
+  # Store log loss and classification error in lists
+  log_loss_train_list[[as.character(digit)]] <- loss_entropy_train
+  classification_error_train_list[[as.character(digit)]] <- classification_error_train
+  log_loss_test_list[[as.character(digit)]] <- loss_entropy_test
+  classification_error_test_list[[as.character(digit)]] <- classification_error_test
+}
+```
+
+```{r prediction results}
+
+# Print the results from lists
+cat("Training Set Log Loss for each digit:\n")
+for (digit in 0:9) {
+  cat("Digit", digit, ":", round(log_loss_train_list[[as.character(digit)]], 3), "\n")
+}
+cat("Training Set Classification Errors for each digit:\n")
+for (digit in 0:9) {
+  cat("Digit", digit, ":", round(classification_error_train_list[[as.character(digit)]], 3), "\n")
+}
+cat("Test Set Log Loss for each digit:\n")
+for (digit in 0:9) {
+  cat("Digit", digit, ":", round(log_loss_test_list[[as.character(digit)]], 3), "\n")
+}
+cat("Test Set Classification Errors for each digit:\n")
+for (digit in 0:9) {
+  cat("Digit", digit, ":", round(classification_error_test_list[[as.character(digit)]], 3), "\n")
+}
+
+
+# Compute the average log loss & classification errors
+average_log_loss_train <- mean(sapply(log_loss_train_list, function(x) x))
+cat("Average Training Set Log Loss:", round(average_log_loss_train, 3), "\n")
+average_classification_error_train <- mean(sapply(classification_error_train_list, function(x) x))
+cat("Average Training Set Classification Errors:", round(average_classification_error_train, 3), "\n")
+average_log_loss_test <- mean(sapply(log_loss_test_list, function(x) x))
+cat("Average Test Set Log Loss:", round(average_log_loss_test, 3), "\n")
+average_classification_error_test <- mean(sapply(classification_error_test_list, function(x) x))
+cat("Average Test Set Classification Errors:", round(average_classification_error_test, 3), "\n")
+```
+
+#From the log loss and the average number of classification errors, we can see that the prediction results are quite accurate(training set: loss= 0.785, classification errors= 0.022; test set: loss= 0.891, classification error: 0.025)

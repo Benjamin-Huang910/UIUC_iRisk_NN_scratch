@@ -1,0 +1,165 @@
+---
+title: "Neural Network"
+output: html_document
+date: "2024-02-15"
+---
+
+```{r data}
+
+setwd("C:\\宿題\\UIUC\\IRisk Lab\\Neural Network (NN)")
+#install.packages("keras")
+library(keras)
+library(ggplot2)
+
+# Loads the MNIST dataset, saves as an .RData file if not in WD
+#if (!(file.exists("mnist_data.RData"))) {
+  
+  ## installs older python version
+  #reticulate::install_python("3.10:latest")
+  #keras::install_keras(python_version = "3.10")
+  ## re-loads keras
+  #library(keras)
+  ## get MNIST data
+  #mnist <- dataset_mnist()
+  ## save to WD as .RData
+  #save(mnist, file = "mnist_data.RData")
+  
+#} else {
+  ## read-in MNIST data
+  #load(file = "mnist_data.RData")
+#}
+
+mnist <- dataset_mnist()
+
+# Access the training and testing sets
+train_images <- mnist$train$x
+train_labels <- mnist$train$y
+test_images <- mnist$test$x
+test_labels <- mnist$test$y
+```
+
+```{r nn}
+# Preprocess the data
+train_images <- array_reshape(train_images, c(dim(train_images)[1], 28 * 28)) / 255
+test_images <- array_reshape(test_images, c(dim(test_images)[1], 28 * 28)) / 255
+
+# Define the neural network
+model <- keras_model_sequential() %>%
+  layer_dense(units = 128, activation = "sigmoid", input_shape = c(28 * 28)) %>%
+  layer_dense(units = 10, activation = "softmax")
+
+# Compile the model
+model %>% compile(
+  optimizer = 'Adam',
+  loss = 'sparse_categorical_crossentropy',
+  metrics = c('accuracy')
+)
+
+# Train the model
+model %>% fit(train_images, train_labels, epochs = 10, batch_size = 64, validation_split = 0.2)
+
+# Evaluate the model on test data
+test_loss_and_accuracy <- model %>% evaluate(test_images, test_labels)
+cat("Test loss and accuracy:", test_loss_and_accuracy, "\n")
+```
+#Reshapes the 28x28 images into flat vectors of size 784
+#Normalizes the pixel values to the range [0, 1] by dividing by 255
+
+#Creates a sequential model using keras_model_sequential()
+#Adds a dense hidden layer with 128 neurons and a sigmoid activation function.
+#Adds the output layer with 10 neurons (one for each digit) and a softmax activation function.
+
+#Compiles the model with the Adam optimizer, sparse categorical crossentropy loss function, and accuracy as the evaluation metric.
+
+#Trains the model on the training data for 5 epochs with a batch size of 64 and a validation split of 20%
+
+#Evaluates the trained model on the test data and prints the test accuracy
+
+```{r diagram}
+# Make predictions using the trained model
+predictions <- model %>% predict(test_images)
+
+# Extract the class with the maximum probability for each sample
+predicted_labels <- apply(predictions, 1, function(x) which.max(x) - 1)
+
+# Create a data frame for plotting
+plot_data <- data.frame(
+  TrueLabel = as.factor(test_labels),
+  PredictedLabel = as.factor(predicted_labels)
+)
+
+# Plot the results using ggplot2
+ggplot(plot_data, aes(x = TrueLabel, fill = PredictedLabel)) +
+  geom_bar(position = "dodge") +
+  labs(title = "True vs Predicted Labels",
+       x = "True Label",
+       y = "Count",
+       fill = "Predicted Label")
+```
+
+```{r plot}
+# Define the updated plot_mnist function
+plot_mnist <- function(plt, predictions) {
+  ## create image
+  image(x = 1:28,
+        y = 1:28,
+        ## image is oriented incorrectly, this fixes it
+        z = t(apply(plt, 1, rev)),
+        ## 255:0 puts black on white canvas,
+        ## changing to 0:255 puts white on black canvas
+        col = gray((255:0)/255),
+        axes = FALSE)
+  
+  ## create plot border
+  rect(xleft = 0.5,
+       ybottom = 0.5,
+       xright = 28 + 0.5,
+       ytop = 28 + 0.5,
+       border = "black",
+       lwd = 1)
+  
+  ## display prediction result
+  text(x = 15, y = 25, labels = paste("Prediction:", predictions), col = "red", cex = 1.5)
+}
+
+# Display the first 36 predictions for each digit
+par(mfcol = c(6, 6))
+par(mar = c(0, 0, 0, 0))
+
+for (digit in 0:9) {
+  cat("Digit", digit, " Predictions:\n")
+  digit_indices <- which(test_labels == digit)[1:36]
+  
+  for (i in digit_indices) {
+    # Reshape the flattened image vector into a 28x28 matrix
+    img <- matrix(test_images[i, ] * 255, nrow = 28, ncol = 28)
+    plot_mnist(img, predicted_labels[i])
+  }
+}
+
+par(mfcol = c(1, 1))
+```
+
+```{r heatmap}
+
+library(heatmaply)
+# Convert test_labels to a vector
+test_labels_vector <- as.vector(test_labels)
+
+# Ensure that the labels are factors with levels from 0 to 9
+test_labels_factor <- as.factor(test_labels_vector)
+predicted_labels_factor <- as.factor(predicted_labels)
+levels(test_labels_factor) <- 0:9
+levels(predicted_labels_factor) <- 0:9
+
+# Create a confusion matrix manually
+conf_matrix <- table(TrueLabel = test_labels_factor, PredictedLabel = predicted_labels_factor)
+
+# Set dimnames explicitly
+dimnames(conf_matrix) <- list(TrueLabel = levels(test_labels_factor), PredictedLabel = levels(predicted_labels_factor))
+
+# Visualize the confusion matrix using heatmap
+heatmaply(as.matrix(conf_matrix), scale = "column",
+          labRow = "True Label", labCol = "Predicted Label",
+          main = "Confusion Matrix", fontsize_row = 10, fontsize_col = 10)
+```
