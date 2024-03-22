@@ -1,0 +1,137 @@
+---
+title: "STAT 427 Notes"
+author: "Daniel Polites"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/dpoli/Desktop/ASRM 390/Week 4")
+library(tidyverse)
+library(keras)
+library(glmnet)
+```
+
+# Setup
+
+```{r data}
+# Loads the MNIST dataset, saves as an .RData file if not in WD
+if (!(file.exists("mnist_data.RData"))) {
+  
+  # ## installs older python version
+  # reticulate::install_python("3.10:latest")
+  # keras::install_keras(python_version = "3.10")
+  # ## re-loads keras
+  # library(keras)
+  
+  ## get MNIST data
+  mnist <- dataset_mnist()
+  ## save to WD as .RData
+  save(mnist, file = "mnist_data.RData")
+  
+} else {
+  ## read-in MNIST data
+  load(file = "mnist_data.RData")
+}
+
+# Access the training and testing sets
+x_train <- mnist$train$x
+y_train <- mnist$train$y
+x_test <- mnist$test$x
+y_test <- mnist$test$y
+
+rm(mnist)
+```
+
+```{r plot_function}
+## plot function, from OG data
+plot_mnist <- function(plt) {
+  ## create image
+  image(x = 1:28,
+        y = 1:28,
+        ## image is oriented incorrectly, this fixes it
+        z = t(apply(plt, 2, rev)),
+        ## 255:0 puts black on white canvas,
+        ## changing to 0:255 puts white on black canvas
+        col = gray((255:0)/255),
+        axes = FALSE)
+  
+  ## create plot border
+  rect(xleft = 0.5,
+       ybottom = 0.5,
+       xright = 28 + 0.5,
+       ytop = 28 + 0.5,
+       border = "black",
+       lwd = 1)
+}
+```
+
+```{r 2D}
+## train data
+
+# initialize matrix
+x_train_2 <- matrix(nrow = nrow(x_train),
+                    ncol = 28*28)
+
+## likely a faster way to do this in the future
+for (i in 1:nrow(x_train)) {
+  ## get each layer's matrix image, stretch to 28^2 x 1
+  x_train_2[i, ] <- matrix(x_train[i, , ], 1, 28*28)
+}
+
+x_train_2 <- x_train_2 %>%
+  as.data.frame()
+
+## test data
+x_test_2 <- matrix(nrow = nrow(x_test),
+                   ncol = 28*28)
+
+for (i in 1:nrow(x_test)) {
+  x_test_2[i, ] <- matrix(x_test[i, , ], 1, 28*28)
+}
+
+x_test_2 <- x_test_2 %>%
+  as.data.frame()
+
+
+## re-scale data
+x_train_2 <- x_train_2 / 256
+x_test_2 <- x_test_2 / 256
+
+## response
+x_test_2$y <- y_test
+x_train_2$y <- y_train
+```
+
+# Model
+
+```{r glm_data}
+## init data
+x_glm <- x_train_2
+train_pred <- list()
+
+## drop cols with all 0s
+x_glm <- x_glm[, (colSums(x_glm) > 0)]
+```
+
+```{r glm_models}
+## 10 models
+for (i in 0:9) {
+print(i)
+  
+x_glm_i <- x_glm %>%
+  mutate(y = (y == i))
+
+model <- glm(data = x_glm_i,
+             formula = y ~ .,
+             family = binomial)
+
+train_pred[[i + 1]] <- predict(model, x_glm %>% select(-y))
+}
+
+names(train_pred) <- c("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+predictions <- data.frame(train_pred)
+
+# write.csv(predictions, "pred.csv", row.names = FALSE)
+```
+
