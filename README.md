@@ -4,8 +4,3 @@
 ##Focus on educational objectives, providing hands-on experience in coding, and customizing of network architecture.
 
 ##Proposed methodology includes research, environment setup, data exploration, implementation of components, testing, and exploration of attention mechanisms.
-
-
-#Upload different versions of codes
-
-#test
