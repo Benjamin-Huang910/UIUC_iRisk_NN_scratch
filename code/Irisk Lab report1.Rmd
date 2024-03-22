@@ -1,0 +1,87 @@
+---
+title: "Irisk Lab report1"
+author: "Ruibo Hou"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r}
+# Download the first 2000 observations of the MNIST dataset
+mnist <- read.csv("https://pjreddie.com/media/files/mnist_train.csv", nrows = 2000)
+colnames(mnist) <- c("Digit", paste("Pixel", seq(1:784), sep = ""))
+save(mnist, file = "mnist_first2000.RData")
+```
+# 1 knn
+```{r}
+# Load the required packages
+library(caret)
+library(class)
+
+# Load the MNIST dataset
+load("mnist_first2000.RData")
+
+# Split the dataset into training data (first 1000 rows) and testing data (last 1000 rows)
+train_data <- mnist[1:1000,] 
+test_data <- mnist[1001:2000,]
+
+# Train a KNN model using 5-fold cross-validation
+train_control <- trainControl(method="cv", number=5)  
+tune_grid <- expand.grid(.k=1:20)
+knn_model <- train(as.factor(Digit)~., data=train_data, method="knn", tuneGrid=tune_grid, trControl=train_control)
+
+# Select the value of K with the lowest cross-validation error
+best_k <- knn_model$bestTune$k
+print(best_k)
+
+# Use the KNN algorithm for classification
+knn_fit <- knn(train=train_data[,1:785], test=test_data[,1:785], cl=train_data$Digit, k=best_k)
+
+# Calculate the prediction error and confusion matrix
+error_rate <- mean(knn_fit != test_data$Digit)
+confusion_matrix <- table(knn_fit, test_data$Digit)
+print(confusion_matrix)
+
+# Print the prediction classification error
+print(paste("Prediction classification error:", error_rate))
+
+```
+# 2 logistic regression
+```{r}
+# Load the glmnet package
+library(glmnet)
+
+# Load the MNIST dataset
+load("mnist_first2000.RData")
+
+# Split the data into training and testing sets
+train_data <- mnist[1:1000,]
+test_data <- mnist[1001:2000,]
+
+# Extract the predictors and response variables
+x_train <- train_data[,2:785]
+y_train <- train_data[, 1]
+x_test <- test_data[,2:785]
+y_test <- test_data[, 1]
+
+# Convert non-numeric columns to numeric using model.matrix()
+x_train <- model.matrix(~., data=train_data[, -1])
+x_test  <- model.matrix(~., data=test_data[, -1])
+# Fit a multi-class logistic regression model with Lasso penalty
+fit <- cv.glmnet(x_train, y_train, family="multinomial", alpha=1, type.measure="class")
+
+# Select the best tuning parameter
+best_lambda <- fit$lambda.min
+
+# Make predictions on the testing data
+pred <- predict(fit, newx=x_test, s=best_lambda, type="class")
+
+# Compute the confusion matrix
+confusion_matrix <- table(pred, y_test)
+
+# Compute the prediction classification error
+error_rate <- mean(pred != y_test)
+
+# Print the confusion matrix and prediction classification error
+print(confusion_matrix)
+print(paste("Prediction classification error:", error_rate))
+```

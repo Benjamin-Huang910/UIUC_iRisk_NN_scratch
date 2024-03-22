@@ -1,0 +1,167 @@
+---
+title: "Irisk Lab Report3"
+author: "Ruibo Hou"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+0. Data Preprocessing
+```{r}
+# Load the data
+mnist <- read.csv("https://pjreddie.com/media/files/mnist_train.csv", nrows = 20000)
+colnames(mnist) <- c("Digit", paste("Pixel", seq(1:784), sep = ""))
+
+# Normalize the pixel values to range [0, 1]
+mnist[, -1] <- mnist[, -1] / 255
+
+# Split the dataset into features (X) and labels (y)
+X <- as.matrix(mnist[, -1])
+y <- mnist$Digit
+num_classes <- length(unique(y))  
+y_one_hot <- matrix(0, nrow = length(y), ncol = num_classes)  
+y_one_hot[cbind(1:nrow(y_one_hot), y + 1)] <- 1 
+
+
+
+```
+1. Initialize Parameters
+First, we initialize the weights and biases for a network with three hidden layers. Each layer's weights are initialized randomly to break symmetry, and biases are initialized to zero.
+
+```{r}
+
+initialize_params <- function(input_layer_size, hidden_layer1_size, hidden_layer2_size, output_layer_size) {
+  list(
+    W1 = matrix(rnorm(input_layer_size * hidden_layer1_size, mean = 0, sd = sqrt(2 / input_layer_size)), nrow = input_layer_size, ncol = hidden_layer1_size),
+    b1 = matrix(0, nrow = 1, ncol = hidden_layer1_size),
+    W2 = matrix(rnorm(hidden_layer1_size * hidden_layer2_size, mean = 0, sd = sqrt(2 / hidden_layer1_size)), nrow = hidden_layer1_size, ncol = hidden_layer2_size),
+    b2 = matrix(0, nrow = 1, ncol = hidden_layer2_size),
+    W3 = matrix(rnorm(hidden_layer2_size * output_layer_size, mean = 0, sd = sqrt(2 / hidden_layer2_size)), nrow = hidden_layer2_size, ncol = output_layer_size),
+    b3 = matrix(0, nrow = 1, ncol = output_layer_size)
+  )
+}
+
+
+```
+
+2. Activation Functions
+Define the RELU and softmax functions for the network's activation:
+
+```{r}
+relu <- function(z, alpha=0.01) {
+  return(ifelse(z > 0, z, alpha * z))
+}
+
+softmax <- function(z) {
+  exp(z) / rowSums(exp(z))
+}
+```
+3. Forward Propagation
+The forward propagation function computes the activation for each layer using the weights, biases, and activation functions:
+
+```{r}
+forward_propagation <- function(X, params) {
+  Z1 = X %*% params$W1 + matrix(params$b1, nrow = nrow(X), ncol = ncol(params$b1), byrow = TRUE)
+  A1 = relu(Z1)
+  Z2 = A1 %*% params$W2 + matrix(params$b2, nrow = nrow(A1), ncol = ncol(params$b2), byrow = TRUE)
+  A2 = relu(Z2)
+  Z3 = A2 %*% params$W3 + matrix(params$b3, nrow = nrow(A2), ncol = ncol(params$b3), byrow = TRUE)
+  A3 = softmax(Z3)
+  
+  return(list(A1 = A1, A2 = A2, A3 = A3, Z1 = Z1, Z2 = Z2, Z3 = Z3))
+}
+
+
+
+```
+4. Cross-Entropy Loss
+The cross-entropy loss function evaluates the performance of the model:
+
+```{r}
+cross_entropy_loss <- function(y_pred, y_true) {
+  -mean(rowSums(y_true * log(y_pred)))
+}
+```
+5. Backpropagation
+The backpropagation function computes gradients for each parameter in the network by applying the chain rule:
+```{r}
+backpropagation <- function(X, Y, params, forward_outputs, learning_rate) {
+  A1 <- forward_outputs$A1
+  A2 <- forward_outputs$A2
+  A3 <- forward_outputs$A3
+  Z1 <- forward_outputs$Z1
+  Z2 <- forward_outputs$Z2
+  
+
+  leaky_relu_derivative <- function(Z, alpha=0.01) {
+  dZ <- matrix(alpha, nrow = nrow(Z), ncol = ncol(Z)) 
+  dZ[Z > 0] <- 1
+  return(dZ)
+}
+
+
+  dZ3 <- A3 - Y
+  dW3 <- t(A2) %*% dZ3 / nrow(X)
+  db3 <- colSums(dZ3) / nrow(X)
+  
+  
+  dZ2 <- (dZ3 %*% t(params$W3)) * leaky_relu_derivative(Z2)
+  dW2 <- t(A1) %*% dZ2 / nrow(X)
+  db2 <- colSums(dZ2) / nrow(X)
+  
+  
+  
+  dZ1 <- (dZ2 %*% t(params$W2)) * leaky_relu_derivative(Z1)
+  dW1 <- t(X) %*% dZ1 / nrow(X)
+  db1 <- colSums(dZ1) / nrow(X)
+  
+  params$W1 <- params$W1 - learning_rate * dW1
+  params$b1 <- params$b1 - learning_rate * db1
+  params$W2 <- params$W2 - learning_rate * dW2
+  params$b2 <- params$b2 - learning_rate * db2
+  params$W3 <- params$W3 - learning_rate * dW3
+  params$b3 <- params$b3 - learning_rate * db3
+  
+  return(params)
+}
+
+
+```
+
+6. Training the Model
+Train the model over multiple epochs, adjusting the parameters using the gradients computed by backpropagation:
+```{r}
+train_model <- function(train_data, train_labels, learning_rate, epochs, hidden_layer_sizes, batch_size) {
+  input_layer_size <- ncol(train_data)
+  num_classes <- ncol(train_labels)
+  params <- initialize_params(input_layer_size, hidden_layer_sizes[1],hidden_layer_sizes[2], num_classes)
+  
+  for (epoch in 1:epochs) {
+    for (i in seq(1, nrow(train_data), by=batch_size)) {
+      batch_indices <- i:min(i+batch_size-1, nrow(train_data))
+      X_batch <- train_data[batch_indices, ]
+      Y_batch <- train_labels[batch_indices, ]
+      
+      forward_outputs <- forward_propagation(X_batch, params)
+      params <- backpropagation(X_batch, Y_batch, params, forward_outputs, learning_rate)
+    }
+  
+    forward_outputs <- forward_propagation(train_data, params)
+    predictions <- max.col(forward_outputs$A3) - 1
+    true_labels <- max.col(y_one_hot) - 1
+    accuracy <- sum(predictions == true_labels) / length(true_labels)
+    cat(sprintf("Epoch %d: Training Accuracy: %.4f\n", epoch, accuracy))
+  }
+  
+  return(params)
+}
+
+```
+
+7. Model Training
+```{r}
+learning_rate <- 0.01
+epochs <- 200  # Number of passes through the entire dataset
+hidden_layer_sizes <- c(512, 256)
+batch_size <- 128
+# Train the model
+model <- train_model(X, y_one_hot, learning_rate, epochs, hidden_layer_sizes, batch_size)
+```
